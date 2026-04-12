@@ -16,6 +16,7 @@ const codingBtn = document.getElementById('codingBtn');
 const codingModal = document.getElementById('codingModal');
 const codingCloseBtn = document.getElementById('codingCloseBtn');
 const codingSaveBtn = document.getElementById('codingSaveBtn');
+const codingSkipBtn = document.getElementById('codingSkipBtn');
 const codingQuestionTitle = document.getElementById('codingQuestionTitle');
 const codingTableWrap = document.getElementById('codingTableWrap');
 
@@ -25,13 +26,16 @@ let lastRenderedQuestions = [];
 let currentCodingQuestionKey = null;
 let currentCodingItems = [];
 
-function api(path) { return path; }
+function api(path) {
+  return path;
+}
 
 fileInput.addEventListener('change', handleUpload);
 generateBtn.addEventListener('click', handleGenerate);
 exportBtn.addEventListener('click', handleExport);
 codingBtn.addEventListener('click', openCodingForSelectedQuestion);
 codingCloseBtn.addEventListener('click', closeCodingModal);
+codingSkipBtn.addEventListener('click', closeCodingModal);
 codingSaveBtn.addEventListener('click', saveCoding);
 
 async function handleUpload(e) {
@@ -64,7 +68,7 @@ async function handleUpload(e) {
 
 function populateSelectors() {
   rowQuestionsSel.innerHTML = '';
-  colQuestionSel.innerHTML = '<option value="">Нет (Только Total)</option>';
+  colQuestionSel.innerHTML = '<option value="">Только Total</option>';
   for (const c of columns) {
     const text = c.key === c.label ? c.key : `${c.key} — ${c.label}`;
     rowQuestionsSel.add(new Option(text, c.key));
