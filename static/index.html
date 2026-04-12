@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kesha Tables</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body class="app-shell">
+  <div class="page-wrap">
+    <div class="hero-card">
+      <div class="hero-topline">Survey cross-tabs</div>
+      <div class="hero-head">
+        <div>
+          <h1 class="hero-title">Kesha Tables</h1>
+          <p class="hero-subtitle">Кросс-таблицы по вопросам шкалы 1–5 с базами, процентами, ручной кодировкой и значимостью.</p>
+        </div>
+        <div class="hero-badge">Fast • Clean • Web</div>
+      </div>
+    </div>
+
+    <div class="panel upload-panel">
+      <div class="panel-title">Загрузка файла</div>
+      <label class="field-label">Excel-файл</label>
+      <input id="fileInput" type="file" accept=".xlsx,.xls" class="file-input" />
+      <div id="fileStatus" class="file-status"></div>
+    </div>
+
+    <div id="configPanel" class="hidden panel config-panel">
+      <div class="panel-title">Параметры таблицы</div>
+
+      <div class="form-grid">
+        <div class="field-block field-block-wide">
+          <label class="field-label">Вопросы для строк</label>
+          <select id="rowQuestions" multiple class="modern-select multi-select"></select>
+          <div class="field-hint">Можно выбрать несколько вопросов — каждый построится отдельным блоком.</div>
+        </div>
+
+        <div class="field-block">
+          <label class="field-label">Разбивка</label>
+          <select id="colQuestion" class="modern-select"></select>
+        </div>
+
+        <div class="field-block">
+          <label class="field-label">Значимость</label>
+          <select id="significanceMode" class="modern-select">
+            <option value="none">Не считать</option>
+            <option value="vs_first">С первым столбцом</option>
+            <option value="all_vs_all">Все со всем</option>
+          </select>
+        </div>
+
+        <div class="field-block">
+          <label class="field-label">Уровень</label>
+          <select id="sigLevel" class="modern-select">
+            <option value="95">95%</option>
+            <option value="90">90%</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="toggle-row">
+        <label class="toggle-chip"><input id="showBase" type="checkbox" checked><span>Показывать базу</span></label>
+        <label class="toggle-chip"><input id="showFullScale" type="checkbox" checked><span>Полная шкала 1–5</span></label>
+        <label class="toggle-chip"><input id="showTop2" type="checkbox"><span>TOP-2</span></label>
+        <label class="toggle-chip"><input id="showBottom2" type="checkbox"><span>BOTTOM-2</span></label>
+      </div>
+
+      <div class="action-row">
+        <button id="generateBtn" class="btn btn-primary">Построить таблицы</button>
+        <button id="exportBtn" class="btn btn-secondary" disabled>Экспорт в Excel</button>
+        <button id="codingBtn" class="btn btn-ghost" disabled>Настроить кодировку</button>
+      </div>
+    </div>
+
+    <div id="resultsPanel" class="hidden panel results-panel">
+      <div class="results-head">
+        <div>
+          <div class="panel-title">Результаты</div>
+          <div class="field-hint">Общий заголовок столбцов теперь показывается один раз для всех таблиц ниже.</div>
+        </div>
+      </div>
+      <div id="resultTable" class="table-scroll"></div>
+    </div>
+  </div>
+
+  <div id="codingModal" class="fixed inset-0 bg-black/40 hidden items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-[24px] shadow-2xl w-full max-w-5xl max-h-[85vh] flex flex-col overflow-hidden">
+      <div class="flex items-center justify-between p-5 border-b border-slate-200">
+        <div>
+          <div class="text-lg font-semibold text-slate-900">Ручная кодировка</div>
+          <div id="codingQuestionTitle" class="text-sm text-slate-500 mt-1"></div>
+        </div>
+        <button id="codingCloseBtn" class="text-slate-500 text-sm font-medium">Закрыть</button>
+      </div>
+      <div class="p-5 overflow-auto">
+        <p class="text-sm text-slate-600 mb-3">Здесь можно вручную задать коды 1–5 для нестандартных вариантов ответа. Открытые вопросы сюда по умолчанию не попадают.</p>
+        <div id="codingTableWrap"></div>
+      </div>
+      <div class="p-5 border-t border-slate-200 flex justify-between items-center gap-3">
+        <div class="text-xs text-slate-500">Сохрани кодировку, затем заново построй таблицу.</div>
+        <div class="flex gap-2">
+          <button id="codingSaveBtn" class="btn btn-primary">Сохранить кодировку</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
