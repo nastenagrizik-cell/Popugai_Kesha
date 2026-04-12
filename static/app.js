@@ -107,6 +107,13 @@ async function handleGenerate() {
       throw new Error(err.detail || r.statusText);
     }
     const data = await r.json();
+
+    if (!data || !data.questions) {
+      console.error('Ответ /api/crosstab без поля questions:', data);
+      alert('Сервер вернул неожиданный формат результата. Проверь логи backend.');
+      return;
+    }
+
     renderAllQuestions(data);
     resultsPanel.classList.remove('hidden');
     exportBtn.disabled = false;
@@ -367,10 +374,14 @@ function closeCodingModal() {
 
 function handleExport() {
   if (!lastRenderedQuestions.length) return;
-  const wb = XLSX.utils.book_new();
-  const rows = [];
 
-  lastRenderedQuestions.forEach((q, idx) => {
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([]);
+
+  const rows = [];
+  const questions = lastRenderedQuestions;
+
+  questions.forEach((q, idx) => {
     const colValues = q.col_values || [];
     rows.push([q.question_label || `Question ${idx + 1}`]);
     const header = ['Показатель', 'N', 'Total (%)', ...colValues.map((v, i) => `${String.fromCharCode(65 + i)}: ${v} (%)`)];
@@ -392,11 +403,94 @@ function handleExport() {
     rows.push([]);
   });
 
-  const ws = XLSX.utils.aoa_to_sheet(rows);
+  XLSX.utils.sheet_add_aoa(ws, rows, { origin: 'A1' });
+
+  const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+  for (let R = range.s.r; R <= range.e.r; ++R) {
+    const rowArr = rows[R - range.s.r] || [];
+    const firstCell = rowArr[0] || '';
+
+    if (firstCell && String(firstCell).startsWith('📋 ')) {
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const addr = XLSX.utils.encode_cell({ r: R, c: C });
+        if (!ws[addr]) ws[addr] = { t: 's', v: '' };
+        ws[addr].s = {
+          fill: { fgColor: { rgb: 'FFF7ED' } },
+          font: { bold: true, color: { rgb: '7C2D12' } }
+        };
+      }
+      continue;
+    }
+
+    if (firstCell === 'Показатель') {
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const addr = XLSX.utils.encode_cell({ r: R, c: C });
+        if (!ws[addr]) ws[addr] = { t: 's', v: '' };
+        ws[addr].s = {
+          fill: { fgColor: { rgb: '0F172A' } },
+          font: { bold: true, color: { rgb: 'E2E8F0' } }
+        };
+      }
+      continue;
+    }
+
+    if (firstCell === 'База') {
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const addr = XLSX.utils.encode_cell({ r: R, c: C });
+        if (!ws[addr]) continue;
+        ws[addr].s = {
+          fill: { fgColor: { rgb: 'EFF6FF' } },
+          font: { bold: true, color: { rgb: '475569' } }
+        };
+      }
+      continue;
+    }
+
+    if (String(firstCell).startsWith('TOP-2')) {
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const addr = XLSX.utils.encode_cell({ r: R, c: C });
+        if (!ws[addr]) continue;
+        ws[addr].s = {
+          fill: { fgColor: { rgb: 'F4F4F5' } },
+          font: { bold: true, color: { rgb: '1F2933' } }
+        };
+      }
+      continue;
+    }
+
+    if (String(firstCell).startsWith('BOTTOM-2')) {
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const addr = XLSX.utils.encode_cell({ r: R, c: C });
+        if (!ws[addr]) continue;
+        ws[addr].s = {
+          fill: { fgColor: { rgb: 'F4F4F5' } },
+          font: { bold: true, color: { rgb: '1F2933' } }
+        };
+      }
+      continue;
+    }
+
+    for (let C = range.s.c + 3; C <= range.e.c; ++C) {
+      const addr = XLSX.utils.encode_cell({ r: R, c: C });
+      const cell = ws[addr];
+      if (!cell || typeof cell.v !== 'string') continue;
+      const v = cell.v;
+      let fontColor = null;
+      if (v.includes('↑')) fontColor = '15803D';
+      if (v.includes('↓')) fontColor = 'DC2626';
+      if (fontColor) {
+        cell.s = cell.s || {};
+        cell.s.font = cell.s.font || {};
+        cell.s.font.color = { rgb: fontColor };
+        cell.s.font.bold = true;
+      }
+    }
+  }
+
   const colCount = Math.max(...rows.map(r => r.length), 0);
   ws['!cols'] = Array.from({ length: colCount }, (_, i) => {
     if (i === 0) return { wch: 42 };
-    if (i === 1) return { wch: 10 };
+    if (i === 1) return { wch: 8 };
     return { wch: 14 };
   });
 
