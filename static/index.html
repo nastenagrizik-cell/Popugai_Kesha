@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Kesha Tables</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+  <!-- styled SheetJS -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsxjs.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -50,8 +51,8 @@
           <label class="field-label">Значимость</label>
           <select id="significanceMode" class="modern-select">
             <option value="none">Не считать</option>
-            <option value="vs_first">С первым столбцом</option>
-            <option value="all_vs_all">Все со всем</option>
+            <option value="vs_first">С первым столбцом (TOTAL)</option>
+            <option value="all_vs_all">Все со всем (без TOTAL)</option>
           </select>
         </div>
 
@@ -82,7 +83,6 @@
       <div class="results-head">
         <div>
           <div class="panel-title">Результаты</div>
-          <div class="field-hint">Общий заголовок столбцов теперь показывается один раз для всех таблиц ниже.</div>
         </div>
       </div>
       <div id="resultTable" class="table-scroll"></div>
