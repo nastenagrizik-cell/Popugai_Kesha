@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Kesha Tables</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- styled SheetJS -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsxjs.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -19,7 +18,9 @@
       <div class="hero-head">
         <div>
           <h1 class="hero-title">Kesha Tables</h1>
-          <p class="hero-subtitle">Кросс-таблицы по вопросам шкалы 1–5 с базами, процентами, ручной кодировкой и значимостью.</p>
+          <p class="hero-subtitle">
+            Кросс-таблицы по вопросам шкалы 1–5 с базами, процентами, ручной кодировкой и значимостью.
+          </p>
         </div>
         <div class="hero-badge">Fast • Clean • Web</div>
       </div>
@@ -44,7 +45,9 @@
 
         <div class="field-block">
           <label class="field-label">Разбивка</label>
-          <select id="colQuestion" class="modern-select"></select>
+          <select id="colQuestion" class="modern-select">
+            <option value="">Только Total</option>
+          </select>
         </div>
 
         <div class="field-block">
@@ -66,16 +69,27 @@
       </div>
 
       <div class="toggle-row">
-        <label class="toggle-chip"><input id="showBase" type="checkbox" checked><span>Показывать базу</span></label>
-        <label class="toggle-chip"><input id="showFullScale" type="checkbox" checked><span>Полная шкала 1–5</span></label>
-        <label class="toggle-chip"><input id="showTop2" type="checkbox"><span>TOP-2</span></label>
-        <label class="toggle-chip"><input id="showBottom2" type="checkbox"><span>BOTTOM-2</span></label>
+        <label class="toggle-chip">
+          <input id="showBase" type="checkbox" checked />
+          <span>Показывать базу</span>
+        </label>
+        <label class="toggle-chip">
+          <input id="showFullScale" type="checkbox" checked />
+          <span>Показывать все 1–5</span>
+        </label>
+        <label class="toggle-chip">
+          <input id="showTop2" type="checkbox" checked />
+          <span>TOP-2 (4+5)</span>
+        </label>
+        <label class="toggle-chip">
+          <input id="showBottom2" type="checkbox" />
+          <span>BOTTOM-2 (1+2)</span>
+        </label>
       </div>
 
-      <div class="action-row">
-        <button id="generateBtn" class="btn btn-primary">Построить таблицы</button>
-        <button id="exportBtn" class="btn btn-secondary" disabled>Экспорт в Excel</button>
-        <button id="codingBtn" class="btn btn-ghost" disabled>Настроить кодировку</button>
+      <div class="actions-row">
+        <button id="generateBtn" class="primary-btn">Построить таблицы</button>
+        <button id="codingBtn" class="ghost-btn" disabled>Ручная кодировка 1–5</button>
       </div>
     </div>
 
@@ -83,30 +97,41 @@
       <div class="results-head">
         <div>
           <div class="panel-title">Результаты</div>
+          <p class="results-note">
+            Total — все отвечавшие на вопрос. Проценты по столбцам, значимость — к первым или между столбцами, без Total.
+          </p>
         </div>
+        <button id="exportBtn" class="primary-btn" disabled>Выгрузить в Excel</button>
       </div>
-      <div id="resultTable" class="table-scroll"></div>
+
+      <div class="results-table-wrap">
+        <table id="resultTable" class="results-master-table"></table>
+      </div>
+
+      <div class="legend">
+        <span class="legend-item"><span class="legend-swatch legend-base"></span>База N</span>
+        <span class="legend-item"><span class="legend-swatch legend-top2"></span>TOP-2 / BOTTOM-2</span>
+        <span class="legend-item"><span class="legend-mark legend-up">↑</span>значимо выше</span>
+        <span class="legend-item"><span class="legend-mark legend-down">↓</span>значимо ниже</span>
+        <span class="legend-item">буквы A/B/C — выше других столбцов (all vs all)</span>
+      </div>
     </div>
   </div>
 
-  <div id="codingModal" class="fixed inset-0 bg-black/40 hidden items-center justify-center p-4 z-50">
-    <div class="bg-white rounded-[24px] shadow-2xl w-full max-w-5xl max-h-[85vh] flex flex-col overflow-hidden">
-      <div class="flex items-center justify-between p-5 border-b border-slate-200">
-        <div>
-          <div class="text-lg font-semibold text-slate-900">Ручная кодировка</div>
-          <div id="codingQuestionTitle" class="text-sm text-slate-500 mt-1"></div>
-        </div>
-        <button id="codingCloseBtn" class="text-slate-500 text-sm font-medium">Закрыть</button>
+  <div id="codingModal" class="coding-modal hidden">
+    <div class="coding-modal-backdrop"></div>
+    <div class="coding-modal-body">
+      <div class="coding-modal-head">
+        <h2 id="codingQuestionTitle" class="coding-modal-title"></h2>
+        <button id="codingCloseBtn" class="icon-btn" aria-label="Закрыть">✕</button>
       </div>
-      <div class="p-5 overflow-auto">
-        <p class="text-sm text-slate-600 mb-3">Здесь можно вручную задать коды 1–5 для нестандартных вариантов ответа. Открытые вопросы сюда по умолчанию не попадают.</p>
-        <div id="codingTableWrap"></div>
-      </div>
-      <div class="p-5 border-t border-slate-200 flex justify-between items-center gap-3">
-        <div class="text-xs text-slate-500">Сохрани кодировку, затем заново построй таблицу.</div>
-        <div class="flex gap-2">
-          <button id="codingSaveBtn" class="btn btn-primary">Сохранить кодировку</button>
-        </div>
+      <p class="coding-modal-subtitle">
+        Для каждого уникального текстового ответа назначь код 1–5 или «не учитывать». Эти коды будут использоваться в шкале.
+      </p>
+      <div id="codingTableWrap" class="coding-table-wrap"></div>
+      <div class="coding-modal-actions">
+        <button id="codingSaveBtn" class="primary-btn">Сохранить кодировку</button>
+        <button id="codingSkipBtn" class="ghost-btn">Отмена</button>
       </div>
     </div>
   </div>
