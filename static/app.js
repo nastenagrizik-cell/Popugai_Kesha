@@ -82,8 +82,10 @@ function getColumnMeta(key) {
 
 async function handleGenerate() {
   if (!datasetId) return alert('Сначала загрузите файл.');
+
   const rowCols = Array.from(rowQuestionsSel.selectedOptions).map(o => o.value);
   const colCol = colQuestionSel.value ? [colQuestionSel.value] : [];
+
   if (!rowCols.length) return alert('Выберите хотя бы один вопрос для строк.');
 
   const significanceMode = colCol.length ? significanceModeSel.value : 'none';
@@ -106,14 +108,16 @@ async function handleGenerate() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
+
     if (!r.ok) {
       const err = await r.json().catch(() => ({}));
       throw new Error(err.detail || r.statusText);
     }
+
     const data = await r.json();
 
-    if (!data || !data.questions) {
-      console.error('Ответ /api/crosstab без поля questions:', data);
+    if (!data || !Array.isArray(data.questions)) {
+      console.error('Ответ /api/crosstab без корректного поля questions:', data);
       alert('Сервер вернул неожиданный формат результата. Проверь логи backend.');
       return;
     }
@@ -132,6 +136,7 @@ function renderAllQuestions(data) {
   const container = document.getElementById('resultTable');
   container.innerHTML = '';
   lastRenderedQuestions = [];
+
   const questions = data.questions || [];
   if (!questions.length) return;
 
@@ -213,16 +218,11 @@ function renderAllQuestions(data) {
         const val = document.createElement('span');
         const cellValue = row.cells ? row.cells[cv] : null;
         val.textContent = cellValue != null ? String(cellValue) : '';
+
         if (sig.direction === 'up') val.className = 'sig-up';
         if (sig.direction === 'down') val.className = 'sig-down';
-        wrap.appendChild(val);
 
-        if (sig.marker) {
-          const mark = document.createElement('span');
-          mark.textContent = sig.marker;
-          mark.className = sig.direction === 'up' ? 'sig-up' : 'sig-down';
-          wrap.appendChild(mark);
-        }
+        wrap.appendChild(val);
 
         if (sig.letters && sig.letters.length) {
           const letters = document.createElement('span');
@@ -260,11 +260,13 @@ async function openCodingForSelectedQuestion() {
     alert('Для ручной кодировки выбери ровно один вопрос в списке строк.');
     return;
   }
+
   const meta = getColumnMeta(selected[0]);
   if (meta && meta.can_code === false) {
     alert('Этот вопрос похож на открытый, поэтому кодировка для него скрыта.');
     return;
   }
+
   await openCoding(selected[0], meta ? meta.label : selected[0]);
 }
 
@@ -276,10 +278,12 @@ async function openCoding(questionKey, questionLabel) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ dataset_id: datasetId, question_key: questionKey }),
     });
+
     if (!r.ok) {
       const err = await r.json().catch(() => ({}));
       throw new Error(err.detail || r.statusText);
     }
+
     const data = await r.json();
     currentCodingQuestionKey = questionKey;
     currentCodingItems = data.items || [];
@@ -298,27 +302,33 @@ function renderCodingTable(items) {
   const table = document.createElement('table');
   const thead = document.createElement('thead');
   const hr = document.createElement('tr');
+
   ['Исходный ответ', 'N', 'Код'].forEach(t => {
     const th = document.createElement('th');
     th.textContent = t;
     hr.appendChild(th);
   });
+
   thead.appendChild(hr);
   table.appendChild(thead);
 
   const tbody = document.createElement('tbody');
   items.forEach((item, idx) => {
     const tr = document.createElement('tr');
+
     const tdRaw = document.createElement('td');
     tdRaw.textContent = item.raw_value;
     tr.appendChild(tdRaw);
+
     const tdN = document.createElement('td');
     tdN.textContent = String(item.n);
     tr.appendChild(tdN);
+
     const tdSel = document.createElement('td');
     const sel = document.createElement('select');
     sel.className = 'coding-select';
     sel.dataset.index = String(idx);
+
     [
       { value: '', label: 'Не учитывать' },
       { value: '1', label: '1' },
@@ -332,11 +342,14 @@ function renderCodingTable(items) {
       op.textContent = o.label;
       sel.appendChild(op);
     });
+
     sel.value = item.current_code != null ? String(item.current_code) : '';
     tdSel.appendChild(sel);
     tr.appendChild(tdSel);
+
     tbody.appendChild(tr);
   });
+
   table.appendChild(tbody);
   wrap.appendChild(table);
   codingTableWrap.innerHTML = '';
@@ -345,9 +358,11 @@ function renderCodingTable(items) {
 
 async function saveCoding() {
   if (!datasetId || !currentCodingQuestionKey) return;
+
   try {
     const selects = codingTableWrap.querySelectorAll('select[data-index]');
     const mapping = {};
+
     selects.forEach(sel => {
       const idx = Number(sel.dataset.index);
       const item = currentCodingItems[idx];
@@ -357,12 +372,18 @@ async function saveCoding() {
     const r = await fetch(api('/api/coding-save'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dataset_id: datasetId, question_key: currentCodingQuestionKey, mapping }),
+      body: JSON.stringify({
+        dataset_id: datasetId,
+        question_key: currentCodingQuestionKey,
+        mapping
+      }),
     });
+
     if (!r.ok) {
       const err = await r.json().catch(() => ({}));
       throw new Error(err.detail || r.statusText);
     }
+
     closeCodingModal();
     alert('Кодировка сохранена. Теперь заново построй таблицу.');
   } catch (err) {
@@ -383,38 +404,55 @@ function handleExport() {
   const ws = XLSX.utils.aoa_to_sheet([]);
 
   const rows = [];
+  const styleMeta = [];
   const questions = lastRenderedQuestions;
 
   questions.forEach((q, idx) => {
     const colValues = q.col_values || [];
+
     rows.push([q.question_label || `Question ${idx + 1}`]);
+    styleMeta.push({ type: 'question-title' });
+
     const header = ['Показатель', 'N', 'Total (%)', ...colValues.map((v, i) => `${String.fromCharCode(65 + i)}: ${v} (%)`)];
     rows.push(header);
+    styleMeta.push({ type: 'header' });
 
     (q.rows || []).forEach(row => {
       const cells = row.cells || {};
       const sig = row.sig || {};
       const arr = [row.label ?? '', row.n ?? '', cells['__total'] ?? ''];
+
+      const sigByCol = {};
+
       colValues.forEach(cv => {
         let txt = cells[cv] != null ? String(cells[cv]) : '';
         const meta = sig[cv] || {};
-        if (meta.marker) txt += meta.marker;
         if (meta.letters && meta.letters.length) txt += ' ' + meta.letters.join(' ');
         arr.push(txt.trim());
+        sigByCol[cv] = meta;
       });
+
       rows.push(arr);
+      styleMeta.push({
+        type: 'data',
+        rowKind: row.kind,
+        colValues,
+        sigByCol,
+      });
     });
+
     rows.push([]);
+    styleMeta.push({ type: 'blank' });
   });
 
   XLSX.utils.sheet_add_aoa(ws, rows, { origin: 'A1' });
 
   const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
-  for (let R = range.s.r; R <= range.e.r; ++R) {
-    const rowArr = rows[R - range.s.r] || [];
-    const firstCell = rowArr[0] || '';
 
-    if (firstCell && String(firstCell).startsWith('📋 ')) {
+  for (let R = range.s.r; R <= range.e.r; ++R) {
+    const meta = styleMeta[R - range.s.r] || {};
+
+    if (meta.type === 'question-title') {
       for (let C = range.s.c; C <= range.e.c; ++C) {
         const addr = XLSX.utils.encode_cell({ r: R, c: C });
         if (!ws[addr]) ws[addr] = { t: 's', v: '' };
@@ -426,7 +464,7 @@ function handleExport() {
       continue;
     }
 
-    if (firstCell === 'Показатель') {
+    if (meta.type === 'header') {
       for (let C = range.s.c; C <= range.e.c; ++C) {
         const addr = XLSX.utils.encode_cell({ r: R, c: C });
         if (!ws[addr]) ws[addr] = { t: 's', v: '' };
@@ -438,7 +476,7 @@ function handleExport() {
       continue;
     }
 
-    if (firstCell === 'База') {
+    if (meta.rowKind === 'base') {
       for (let C = range.s.c; C <= range.e.c; ++C) {
         const addr = XLSX.utils.encode_cell({ r: R, c: C });
         if (!ws[addr]) continue;
@@ -450,7 +488,7 @@ function handleExport() {
       continue;
     }
 
-    if (String(firstCell).startsWith('TOP-2')) {
+    if (meta.rowKind === 'top2') {
       for (let C = range.s.c; C <= range.e.c; ++C) {
         const addr = XLSX.utils.encode_cell({ r: R, c: C });
         if (!ws[addr]) continue;
@@ -459,10 +497,9 @@ function handleExport() {
           font: { bold: true, color: { rgb: '1F2933' } }
         };
       }
-      continue;
     }
 
-    if (String(firstCell).startsWith('BOTTOM-2')) {
+    if (meta.rowKind === 'bottom2') {
       for (let C = range.s.c; C <= range.e.c; ++C) {
         const addr = XLSX.utils.encode_cell({ r: R, c: C });
         if (!ws[addr]) continue;
@@ -471,23 +508,26 @@ function handleExport() {
           font: { bold: true, color: { rgb: '1F2933' } }
         };
       }
-      continue;
     }
 
-    for (let C = range.s.c + 3; C <= range.e.c; ++C) {
-      const addr = XLSX.utils.encode_cell({ r: R, c: C });
-      const cell = ws[addr];
-      if (!cell || typeof cell.v !== 'string') continue;
-      const v = cell.v;
-      let fontColor = null;
-      if (v.includes('↑')) fontColor = '15803D';
-      if (v.includes('↓')) fontColor = 'DC2626';
-      if (fontColor) {
-        cell.s = cell.s || {};
-        cell.s.font = cell.s.font || {};
-        cell.s.font.color = { rgb: fontColor };
-        cell.s.font.bold = true;
-      }
+    if (meta.type === 'data' && meta.colValues) {
+      meta.colValues.forEach((cv, idx) => {
+        const sig = (meta.sigByCol || {})[cv] || {};
+        const addr = XLSX.utils.encode_cell({ r: R, c: 3 + idx });
+        const cell = ws[addr];
+        if (!cell) return;
+
+        let fontColor = null;
+        if (sig.direction === 'up') fontColor = '15803D';
+        if (sig.direction === 'down') fontColor = 'DC2626';
+
+        if (fontColor) {
+          cell.s = cell.s || {};
+          cell.s.font = cell.s.font || {};
+          cell.s.font.color = { rgb: fontColor };
+          cell.s.font.bold = true;
+        }
+      });
     }
   }
 
