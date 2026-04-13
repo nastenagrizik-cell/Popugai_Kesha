@@ -158,10 +158,6 @@ def parse_scale_1_5(v: Any, manual_map: dict[str, int | None] | None = None) -> 
     return None
 
 
-def membership_multi(df: pd.DataFrame, cols: list[str]) -> dict[str, pd.Series]:
-    return {c: df[c].map(_cell_nonempty) for c in cols}
-
-
 def membership_single(df: pd.DataFrame, col: str) -> dict[str, pd.Series]:
     s = df[col]
     out: dict[str, pd.Series] = {}
@@ -368,7 +364,7 @@ def compute_crosstab(
                     pval = _two_prop_pvalue(x1, n1, x2, n2)
                     if pval is None or pval >= alpha:
                         continue
-                    if (x1 / n1) > (x2 / n2):
+                    if n1 > 0 and n2 > 0 and (x1 / n1) > (x2 / n2):
                         higher_than.append(_col_letter(j))
                 meta[cv] = {"marker": "", "direction": None, "letters": higher_than}
             return meta
@@ -376,96 +372,82 @@ def compute_crosstab(
         return meta
 
     for q in cfg.row_cols:
-        manual_map = manual_codings.get(q, {})
         series_raw = df[q]
+        manual_map = manual_codings.get(q, {})
 
         if cfg.row_scale:
-            series = series_raw.map(lambda x: parse_scale_1_5(x, manual_map=manual_map))
-            mask_answered = series.map(lambda x: x is not None)
-            base_total = int(mask_answered.sum())
+            series_scale = series_raw.map(lambda x: parse_scale_1_5(x, manual_map=manual_map))
+            answered_mask = series_scale.map(lambda x: x is not None)
+            base_total = int(answered_mask.sum())
             detected_labels = detect_scale_labels(series_raw, manual_map=manual_map)
             can_code = is_question_coding_candidate(series_raw)
+            row_defs: list[tuple[str, str, pd.Series]] = []
+
+            if cfg.show_full_scale:
+                for b in [1, 2, 3, 4, 5]:
+                    label = detected_labels.get(b, str(b))
+                    mask = answered_mask & series_scale.map(lambda x, bb=b: x == bb if x is not None else False)
+                    row_defs.append(("cat", label, mask))
+
+            if cfg.include_top2:
+                mask = answered_mask & series_scale.map(lambda x: x in {4, 5} if x is not None else False)
+                row_defs.append(("top2", "TOP-2 (4+5)", mask))
+
+            if cfg.include_bottom2:
+                mask = answered_mask & series_scale.map(lambda x: x in {1, 2} if x is not None else False)
+                row_defs.append(("bottom2", "BOTTOM-2 (1+2)", mask))
+
         else:
-            mask_answered = series_raw.map(_cell_nonempty)
-            base_total = int(mask_answered.sum())
-            detected_labels = None
+            answered_mask = series_raw.map(_cell_nonempty)
+            base_total = int(answered_mask.sum())
             can_code = False
 
-        rows: list[dict[str, Any]] = []
+            value_masks = membership_single(df, q)
+            if cfg.row_include_ids is not None:
+                value_masks = {k: v for k, v in value_masks.items() if k in cfg.row_include_ids}
+
+            row_defs = []
+            for val, mask in value_masks.items():
+                row_defs.append(("cat", val, mask & answered_mask))
 
         base_by_col: dict[str, int] = {}
         if col_key is not None:
             for cv in col_values:
                 mask_col = df[col_key].map(lambda x, vv=cv: _cell_nonempty(x) and str(x).strip() == vv)
-                base_by_col[cv] = int((mask_answered & mask_col).sum())
+                base_by_col[cv] = int((answered_mask & mask_col).sum())
+
+        rows: list[dict[str, Any]] = []
 
         if cfg.show_base:
             base_cells: dict[str, Any] = {"__total": None}
-            if col_key is not None:
-                for cv in col_values:
-                    base_cells[cv] = base_by_col[cv]
-            rows.append({"kind": "base", "label": "База", "n": base_total, "cells": base_cells, "sig": {}})
+            for cv in col_values:
+                base_cells[cv] = base_by_col[cv]
+            rows.append(
+                {
+                    "kind": "base",
+                    "label": "База",
+                    "n": base_total,
+                    "cells": base_cells,
+                    "sig": {},
+                }
+            )
 
-        if cfg.row_scale:
-            def append_bucket(kind: str, label: str, accepted: set[int]):
-                mask_bucket = mask_answered & series.map(lambda x: x in accepted if x is not None else False)
-                n_total = int(mask_bucket.sum())
-                total_pct = round(100.0 * n_total / base_total, 1) if base_total else None
+        for kind, label, mask_row in row_defs:
+            n_total = int(mask_row.sum())
+            total_pct = round(100.0 * n_total / base_total, 1) if base_total else None
 
-                row_cells: dict[str, Any] = {"__total": total_pct}
-                success_counts: dict[str, int] = {}
-
-                if col_key is not None:
-                    for cv in col_values:
-                        mask_col = df[col_key].map(lambda x, vv=cv: _cell_nonempty(x) and str(x).strip() == vv)
-                        base_col = base_by_col[cv]
-                        n_col = int((mask_bucket & mask_col).sum())
-                        success_counts[cv] = n_col
-                        row_cells[cv] = round(100.0 * n_col / base_col, 1) if base_col else None
-
-                sig_meta = make_sig_meta(
-                    success_total=n_total,
-                    base_total=base_total,
-                    success_counts=success_counts,
-                    base_counts=base_by_col,
-                )
-
-                rows.append(
-                    {
-                        "kind": kind,
-                        "label": label,
-                        "n": n_total,
-                        "cells": row_cells,
-                        "sig": sig_meta,
-                    }
-                )
-
-            if cfg.show_full_scale:
-                for b in [1, 2, 3, 4, 5]:
-                    append_bucket("cat", detected_labels.get(b, str(b)), {b})
-
-            if cfg.include_top2:
-                append_bucket("top2", "TOP-2 (4+5)", {4, 5})
-
-            if cfg.include_bottom2:
-                append_bucket("bottom2", "BOTTOM-2 (1+2)", {1, 2})
-
-        else:
-            total_n = int(mask_answered.sum())
-            total_pct = round(100.0 * total_n / base_total, 1) if base_total else None
             row_cells: dict[str, Any] = {"__total": total_pct}
             success_counts: dict[str, int] = {}
 
-            if col_key is not None:
-                for cv in col_values:
-                    mask_col = df[col_key].map(lambda x, vv=cv: _cell_nonempty(x) and str(x).strip() == vv)
-                    base_col = base_by_col[cv]
-                    n_col = int((mask_answered & mask_col).sum())
-                    success_counts[cv] = n_col
-                    row_cells[cv] = round(100.0 * n_col / base_col, 1) if base_col else None
+            for cv in col_values:
+                mask_col = df[col_key].map(lambda x, vv=cv: _cell_nonempty(x) and str(x).strip() == vv)
+                base_col = base_by_col[cv]
+                n_col = int((mask_row & mask_col).sum())
+                success_counts[cv] = n_col
+                row_cells[cv] = round(100.0 * n_col / base_col, 1) if base_col else None
 
             sig_meta = make_sig_meta(
-                success_total=total_n,
+                success_total=n_total,
                 base_total=base_total,
                 success_counts=success_counts,
                 base_counts=base_by_col,
@@ -473,9 +455,9 @@ def compute_crosstab(
 
             rows.append(
                 {
-                    "kind": "cat",
-                    "label": labels.get(q, q),
-                    "n": total_n,
+                    "kind": kind,
+                    "label": label,
+                    "n": n_total,
                     "cells": row_cells,
                     "sig": sig_meta,
                 }
@@ -494,4 +476,9 @@ def compute_crosstab(
             }
         )
 
-    return {"questions": results_per_q, "meta": {"has_breakdown": bool(cfg.col_cols)}}
+    return {
+        "questions": results_per_q,
+        "meta": {
+            "has_breakdown": bool(cfg.col_cols)
+        },
+    }
