@@ -263,11 +263,16 @@ class CrosstabConfig:
     include_bottom2: bool = False
     show_full_scale: bool = True
     show_base: bool = True
-    significance_mode: str = "none"
+    significance_mode: str = "none"  # "none" | "vs_first" | "all_vs_all"
     sig_level: int = 95
 
 
-def compute_crosstab(df: pd.DataFrame, labels: dict[str, str], cfg: CrosstabConfig, manual_codings: dict[str, dict[str, int | None]] | None = None) -> dict[str, Any]:
+def compute_crosstab(
+    df: pd.DataFrame,
+    labels: dict[str, str],
+    cfg: CrosstabConfig,
+    manual_codings: dict[str, dict[str, int | None]] | None = None,
+) -> dict[str, Any]:
     manual_codings = manual_codings or {}
     for c in cfg.row_cols + cfg.col_cols:
         if c not in df.columns:
@@ -285,56 +290,42 @@ def compute_crosstab(df: pd.DataFrame, labels: dict[str, str], cfg: CrosstabConf
     if col_key is not None:
         col_values = sorted({str(v).strip() for v in df[col_key].dropna().unique() if str(v).strip()})
 
-    def _comparison_columns_for_all_vs_all() -> list[str]:
-        if not col_values:
-            return []
-        if len(col_values) <= 1:
-            return []
-        return col_values[1:]  # исключаем первый (TOTAL) из сравнений
-
-    def make_sig_meta(success_counts: dict[str, int], base_counts: dict[str, int]) -> dict[str, dict[str, Any]]:
+    def make_sig_meta(
+        success_total: int,
+        base_total: int,
+        success_counts: dict[str, int],
+        base_counts: dict[str, int],
+    ) -> dict[str, dict[str, Any]]:
         meta: dict[str, dict[str, Any]] = {}
+
         if not col_values or cfg.significance_mode == "none":
             return meta
 
-        if cfg.significance_mode == "vs_first" and col_values:
-            first = col_values[0]
-            x1 = success_counts.get(first, 0)
-            n1 = base_counts.get(first, 0)
+        if cfg.significance_mode == "vs_first":
             for cv in col_values:
-                if cv == first:
-                    meta[cv] = {"marker": "", "direction": None, "letters": []}
-                    continue
                 x2 = success_counts.get(cv, 0)
                 n2 = base_counts.get(cv, 0)
-                pval = _two_prop_pvalue(x2, n2, x1, n1)
+                pval = _two_prop_pvalue(x2, n2, success_total, base_total)
                 if pval is None or pval >= alpha:
                     meta[cv] = {"marker": "", "direction": None, "letters": []}
                 else:
                     p1 = x2 / n2
-                    p0 = x1 / n1
+                    p0 = success_total / base_total
                     if p1 > p0:
                         meta[cv] = {"marker": "↑", "direction": "up", "letters": []}
                     elif p1 < p0:
                         meta[cv] = {"marker": "↓", "direction": "down", "letters": []}
                     else:
                         meta[cv] = {"marker": "", "direction": None, "letters": []}
-            meta[first] = {"marker": "", "direction": None, "letters": []}
             return meta
 
         if cfg.significance_mode == "all_vs_all":
-            comp_cols = _comparison_columns_for_all_vs_all()
-            if not comp_cols:
-                return meta
             for i, cv in enumerate(col_values):
-                if cv not in comp_cols:
-                    meta[cv] = {"marker": "", "direction": None, "letters": []}
-                    continue
                 x1 = success_counts.get(cv, 0)
                 n1 = base_counts.get(cv, 0)
                 higher_than: list[str] = []
                 for j, other in enumerate(col_values):
-                    if other not in comp_cols or other == cv:
+                    if other == cv:
                         continue
                     x2 = success_counts.get(other, 0)
                     n2 = base_counts.get(other, 0)
@@ -373,8 +364,11 @@ def compute_crosstab(df: pd.DataFrame, labels: dict[str, str], cfg: CrosstabConf
         def append_bucket(kind: str, label: str, accepted: set[int]):
             mask_bucket = mask_answered & series.map(lambda x: x in accepted if x is not None else False)
             n_total = int(mask_bucket.sum())
-            row_cells: dict[str, Any] = {"__total": round(100.0 * n_total / base_total) if base_total else None}
+            total_pct = round(100.0 * n_total / base_total) if base_total else None
+
+            row_cells: dict[str, Any] = {"__total": total_pct}
             success_counts: dict[str, int] = {}
+
             if col_key is not None:
                 for cv in col_values:
                     mask_col = df[col_key].map(lambda x, vv=cv: _cell_nonempty(x) and str(x).strip() == vv)
@@ -382,8 +376,23 @@ def compute_crosstab(df: pd.DataFrame, labels: dict[str, str], cfg: CrosstabConf
                     n_col = int((mask_bucket & mask_col).sum())
                     success_counts[cv] = n_col
                     row_cells[cv] = round(100.0 * n_col / base_col) if base_col else None
-            sig_meta = make_sig_meta(success_counts, base_by_col)
-            rows.append({"kind": kind, "label": label, "n": n_total, "cells": row_cells, "sig": sig_meta})
+
+            sig_meta = make_sig_meta(
+                success_total=n_total,
+                base_total=base_total,
+                success_counts=success_counts,
+                base_counts=base_by_col,
+            )
+
+            rows.append(
+                {
+                    "kind": kind,
+                    "label": label,
+                    "n": n_total,
+                    "cells": row_cells,
+                    "sig": sig_meta,
+                }
+            )
 
         if cfg.show_full_scale:
             for b in [1, 2, 3, 4, 5]:
