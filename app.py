@@ -11,7 +11,14 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from crosstab_logic import CrosstabConfig, compute_crosstab, dimension_values, load_survey_excel
+from crosstab_logic import (
+    CrosstabConfig,
+    compute_crosstab,
+    dimension_values,
+    get_question_coding_candidates,
+    is_question_coding_candidate,
+    load_survey_excel,
+)
 
 app = FastAPI(title="Survey crosstabs")
 
@@ -24,6 +31,7 @@ app.add_middleware(
 
 STATIC = Path(__file__).resolve().parent / "static"
 DATASETS: dict[str, Path] = {}
+MANUAL_CODINGS: dict[str, dict[str, dict[str, int | None]]] = {}
 
 
 class DimensionsBody(BaseModel):
@@ -45,8 +53,19 @@ class CrosstabBody(BaseModel):
     include_bottom2: bool = False
     show_full_scale: bool = True
     show_base: bool = True
-    significance_mode: str = "none"
+    significance_mode: str = "none"   # "none" | "vs_first" | "all_vs_all"
     sig_level: int = 95
+
+
+class CodingPreviewBody(BaseModel):
+    dataset_id: str
+    question_key: str
+
+
+class CodingSaveBody(BaseModel):
+    dataset_id: str
+    question_key: str
+    mapping: dict[str, int | None]
 
 
 @app.post("/api/upload")
@@ -71,7 +90,17 @@ async def upload(file: UploadFile = File(...)):
         raise HTTPException(400, str(e)) from e
 
     DATASETS[did] = path
-    columns = [{"key": k, "label": labels.get(k, k)} for k in df.columns]
+    MANUAL_CODINGS[did] = {}
+
+    columns = []
+    for k in df.columns:
+        columns.append(
+            {
+                "key": k,
+                "label": labels.get(k, k),
+                "can_code": is_question_coding_candidate(df[k]),
+            }
+        )
 
     return {
         "dataset_id": did,
@@ -100,20 +129,51 @@ def api_dimensions(body: DimensionsBody):
     return {"values": items}
 
 
+@app.post("/api/coding-preview")
+def api_coding_preview(body: CodingPreviewBody):
+    path = DATASETS.get(body.dataset_id)
+    if not path or not path.exists():
+        raise HTTPException(404, "Сессия истекла или файл не найден. Загрузите снова.")
+
+    df, labels = load_survey_excel(str(path))
+    if body.question_key not in df.columns:
+        raise HTTPException(400, f"Неизвестный столбец: {body.question_key}")
+
+    series = df[body.question_key]
+    if not is_question_coding_candidate(series):
+        raise HTTPException(400, "Для этого вопроса ручная кодировка недоступна.")
+
+    existing_map = MANUAL_CODINGS.get(body.dataset_id, {}).get(body.question_key, {})
+    items = get_question_coding_candidates(series, existing_map=existing_map)
+
+    return {
+        "question_key": body.question_key,
+        "question_label": labels.get(body.question_key, body.question_key),
+        "items": items,
+    }
+
+
+@app.post("/api/coding-save")
+def api_coding_save(body: CodingSaveBody):
+    path = DATASETS.get(body.dataset_id)
+    if not path or not path.exists():
+        raise HTTPException(404, "Сессия истекла или файл не найден. Загрузите снова.")
+
+    if body.dataset_id not in MANUAL_CODINGS:
+        MANUAL_CODINGS[body.dataset_id] = {}
+
+    MANUAL_CODINGS[body.dataset_id][body.question_key] = body.mapping
+    return {"ok": True}
+
+
 @app.post("/api/crosstab")
 def api_crosstab(body: CrosstabBody):
     path = DATASETS.get(body.dataset_id)
     if not path or not path.exists():
         raise HTTPException(404, "Сессия истекла или файл не найден. Загрузите снова.")
 
-    if not body.row_cols or not body.col_cols:
-        raise HTTPException(400, "Укажите хотя бы один столбец для строк и для столбцов.")
-
-    if body.row_single and len(body.row_cols) != 1:
-        raise HTTPException(400, "Режим «один столбец в строках» — выберите ровно один столбец.")
-
-    if body.col_single and len(body.col_cols) != 1:
-        raise HTTPException(400, "Режим «один столбец в столбцах» — выберите ровно один столбец.")
+    if not body.row_cols:
+        raise HTTPException(400, "Укажите хотя бы один столбец для строк.")
 
     df, labels = load_survey_excel(str(path))
 
@@ -133,8 +193,10 @@ def api_crosstab(body: CrosstabBody):
         sig_level=body.sig_level,
     )
 
+    manual_codings = MANUAL_CODINGS.get(body.dataset_id, {})
+
     try:
-        result = compute_crosstab(df, labels, cfg)
+        result = compute_crosstab(df, labels, cfg, manual_codings=manual_codings)
     except Exception as e:
         raise HTTPException(400, str(e)) from e
 
