@@ -375,8 +375,26 @@ def compute_crosstab(
         series_raw = df[q]
         manual_map = manual_codings.get(q, {})
 
-        if cfg.row_scale:
-            series_scale = series_raw.map(lambda x: parse_scale_1_5(x, manual_map=manual_map))
+        parsed_preview = series_raw.map(lambda x: parse_scale_1_5(x, manual_map=manual_map))
+        parsed_n = int(parsed_preview.notna().sum())
+        answered_raw_n = int(series_raw.map(_cell_nonempty).sum())
+
+        auto_scale = False
+        if answered_raw_n > 0:
+            share = parsed_n / answered_raw_n
+            auto_scale = share >= 0.6
+
+        use_scale = bool(
+            cfg.row_scale
+            or cfg.show_full_scale
+            or cfg.include_top2
+            or cfg.include_bottom2
+            or len(manual_map) > 0
+            or auto_scale
+        )
+
+        if use_scale:
+            series_scale = parsed_preview
             answered_mask = series_scale.map(lambda x: x is not None)
             base_total = int(answered_mask.sum())
             detected_labels = detect_scale_labels(series_raw, manual_map=manual_map)
@@ -396,6 +414,12 @@ def compute_crosstab(
             if cfg.include_bottom2:
                 mask = answered_mask & series_scale.map(lambda x: x in {1, 2} if x is not None else False)
                 row_defs.append(("bottom2", "BOTTOM-2 (1+2)", mask))
+
+            if not row_defs:
+                for b in [1, 2, 3, 4, 5]:
+                    label = detected_labels.get(b, str(b))
+                    mask = answered_mask & series_scale.map(lambda x, bb=b: x == bb if x is not None else False)
+                    row_defs.append(("cat", label, mask))
 
         else:
             answered_mask = series_raw.map(_cell_nonempty)
