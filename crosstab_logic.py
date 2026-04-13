@@ -434,7 +434,7 @@ def compute_crosstab(
 
         for kind, label, mask_row in row_defs:
             n_total = int(mask_row.sum())
-            total_pct = round(100.0 * n_total / base_total, 1) if base_total else None
+            total_pct = int(round(100.0 * n_total / base_total)) if base_total else None
 
             row_cells: dict[str, Any] = {"__total": total_pct}
             success_counts: dict[str, int] = {}
@@ -444,7 +444,7 @@ def compute_crosstab(
                 base_col = base_by_col[cv]
                 n_col = int((mask_row & mask_col).sum())
                 success_counts[cv] = n_col
-                row_cells[cv] = round(100.0 * n_col / base_col, 1) if base_col else None
+                row_cells[cv] = int(round(100.0 * n_col / base_col)) if base_col else None
 
             sig_meta = make_sig_meta(
                 success_total=n_total,
