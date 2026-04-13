@@ -301,16 +301,16 @@ def _col_letter(idx: int) -> str:
 class CrosstabConfig:
     row_cols: list[str]
     col_cols: list[str]
-    row_single: bool
-    col_single: bool
-    row_include_ids: list[str] | None
-    col_include_ids: list[str] | None
-    row_scale: bool
-    include_top2: bool
-    include_bottom2: bool
+    row_single: bool = False
+    col_single: bool = False
+    row_include_ids: list[str] | None = None
+    col_include_ids: list[str] | None = None
+    row_scale: bool = False
+    include_top2: bool = False
+    include_bottom2: bool = False
     show_full_scale: bool = True
     show_base: bool = True
-    significance_mode: str = "none"  # "none" | "vs_first" | "all_vs_all"
+    significance_mode: str = "none"
     sig_level: int = 95
 
 
